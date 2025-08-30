@@ -1,3 +1,5 @@
+const { act } = require("react");
+
 function evolveGA(opts) {}
 
 function addPoeticLines(addLns, poemLns) {}
@@ -91,7 +93,107 @@ ${lnsSet.ln2}`
         };
       }
     }
-    function mutators(genesArr) {}
+    function getDescriteIndexd(continuesIndex, arr, resolution) {
+      return continuesIndex * (arr.length - 1) * resolution;
+    }
+
+    function applyRandIndexControledSubstitution(
+      tokens,
+      vocabulary,
+      proberbilities,
+      selectedIndex
+    ) {}
+
+    // for N population it also grows it to 4*N  and keeps only N   by shallow inverse guassion curve on fittness
+    function mutators(lnsSetArr, maxRep = 3) {
+      for (let i = 0; i < lnsSetArr.length; i++) {
+        let tokenized = [
+          defaultTokenizer(lnsSetArr[i].ln1),
+          defaultTokenizer(lnsSetArr[i].ln2),
+        ];
+        const updateEffectivenessGredient = [
+          formUpdateEffectivenessGredientMapMutator(tokenized[0]),
+          formUpdateEffectivenessGredientMapMutator(tokenized[1]),
+        ];
+        let newTokenized = [
+          structuredClone(tokenized[0]),
+          structuredClone(tokenized[1]),
+        ]; // ln1,ln2
+        let proberbilityMutate = [
+          rep / newTokenized[0].length,
+          rep / newTokenized[1].length,
+        ];
+        //  average of mutation proberbilities weighted as increase (+1) to the average of the length of arrays is our resolution
+        const GlobalResolution =
+          (((proberbilityMutate[0] + proberbilityMutate[1]) / 2 + 1) *
+            (newTokenized[0].length + newTokenized[1].length)) /
+          2;
+        // globRes * a + len * b                more the a-b    less will be diverse generations but more it will be rhymed
+        const linesResolution = [
+          GlobalResolution * 0.852 + newTokenized[0].length * 0.13,
+          GlobalResolution * 0.852 + newTokenized[1].length * 0.13,
+        ];
+        const maxSteps = [
+          2.5 * newTokenized[0].length,
+          2.5 * newTokenized[1].length,
+        ];
+        let prevActualResolution = 0;
+        let remainingS = 0;
+        let totalStepsDone = 0;
+        let actualResolutionS = 0;
+        for (let j = 0; j < newTokenized[0].length; j += 0) {
+          totalStepsDone++;
+          let actualResolution =
+            linesResolution[0] /
+            updateEffectivenessGredient[0][
+              getDescriteIndexd(j, newTokenized[0].length, prevActualResolution)
+            ];
+          actualResolutionS += actualResolution;
+          const actualResolutionAVG = actualResolutionS / totalStepsDone;
+          let remaining =
+            (remainingS / totalStepsDone +
+              actualResolutionAVG * newTokenized[0]) /
+            2;
+
+          remainingS += remaining;
+
+          // adjustment so it caps at a limit of steps to apply
+          // its just a linear history interpolation averaged to actuall non linear result every itteration
+          let requiredStepsPrediction = actualResolutionAVG * remaining;
+          if (requiredStepsPrediction > maxSteps[0]) {
+            // we just cap it to maximum we can get  minus the errorRate of our prediction on average
+            actualResolutionAVG =
+              (maxSteps[0] - requiredStepsPrediction) / remaining;
+          }
+          j += actualResolution;
+          prevActualResolution = actualResolution;
+          if (
+            Math.random() *
+              (1 +
+                updateEffectivenessGredient[0][
+                  getDescriteIndexd(
+                    j,
+                    updateEffectivenessGredient[0],
+                    actualResolution
+                  )
+                ]) >
+            proberbilityMutate
+          ) {
+            newTokenized[0] = applyRandIndexControledSubstitution(
+              newTokenized[0],
+              [...new Set([...newTokenized[1], ...newTokenized[0]])],
+              [
+                ...new Set([
+                  ...updateEffectivenessGredient[0],
+                  ...updateEffectivenessGredient[1],
+                ]),
+              ],
+              getDescriteIndexd(j, newTokenized[0], actualResolution)
+            );
+          }
+        }
+      }
+    }
     return {
       fittness: fittness,
       spawners: spawners,
