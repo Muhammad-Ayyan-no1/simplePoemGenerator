@@ -141,8 +141,11 @@ ${lnsSet.ln2}`
         let remainingS = 0;
         let totalStepsDone = 0;
         let actualResolutionS = 0;
+
+        let theoradicalSubstitutedStack = []; // since our resoution can be less so an item is re-substitued twice  we just use the better one from those choices
         for (let j = 0; j < newTokenized[0].length; j += 0) {
           totalStepsDone++;
+          if (totalStepsDone >= maxSteps[0]) break;
           let actualResolution =
             linesResolution[0] /
             updateEffectivenessGredient[0][
@@ -179,6 +182,8 @@ ${lnsSet.ln2}`
                 ]) >
             proberbilityMutate
           ) {
+            // TODO  we will store these results as theoradical substitutions
+            // and then use fittness aproximation / sub_GA for finding best substitution to apply
             newTokenized[0] = applyRandIndexControledSubstitution(
               newTokenized[0],
               [...new Set([...newTokenized[1], ...newTokenized[0]])],
