@@ -1,13 +1,27 @@
 const { act } = require("react");
 
-function evolveGA(opts) {}
+async function evolveGA(opts) {}
 
-function addPoeticLines(addLns, poemLns) {}
+async function addPoeticLines(addLns, poemLns) {
+  function fittness() {}
+  // each line can be added before/after any other line  we encourge similar semantic lns to be added with similar semantic ls
+  // we also want it to remain poetic
+  let r = await evolveGA({
+    specs: {
+      populations: 250,
+      generations: 55,
+      objectives: 4,
+      islands: 1,
+    },
+    fittness: fittness,
+  });
+}
 
-function atamptRhymeLine(ln1, ln2, opts) {
+async function atamptRhymeLine(ln1, ln2, opts) {
   ln1 = ln1.join(" ");
   ln2 = ln2.join(" ");
   let substitutions = opts.substitutions;
+  let getSemanticSimilarity = opts.semanticSimilarity;
   let substitutionGA = (function () {
     function applyAtRandSubstitutionLn(ln, subs, reps) {
       let sI = 0;
@@ -60,8 +74,13 @@ function atamptRhymeLine(ln1, ln2, opts) {
       return [newLn1, newLn2];
     }
     // how well two lns rythm + rhyme and soo on
-    function measurePoetism(ln1, ln2) {}
-    function semanticSimilarity(a, b) {}
+    function measurePoetism(ln1, ln2) {
+      // we are dependent ofn RiTa for this fn
+    }
+    function semanticSimilarity(a, b) {
+      let s = getSemanticSimilarity(a, b);
+      return s;
+    }
     function fittness(lnsSetARR) {
       let r = [];
       for (let i = 0; i < lnsSetARR.length; i++) {
@@ -97,6 +116,9 @@ ${lnsSet.ln2}`
       return continuesIndex * (arr.length - 1) * resolution;
     }
 
+    //KNN type system to just predict the slope of fittness on each word  contains same complex math like mutators
+    function formUpdateEffectivenessGredientMapMutator() {}
+
     function applyRandIndexControledSubstitution(
       tokens,
       vocabulary,
@@ -104,8 +126,13 @@ ${lnsSet.ln2}`
       selectedIndex
     ) {}
 
-    // for N population it also grows it to 4*N  and keeps only N   by shallow inverse guassion curve on fittness
-    function mutators(lnsSetArr, maxRep = 3) {
+    // for N population it also grows it to 4*NM (M = avg line length)  and keeps only N   by shallow inverse guassion curve on fittness aproximation (subGA)
+    // this is a beast of a mutator   has 2 subGAs  to make the best mutations
+    // yes i should just inject to main ga  but this way on average our result is better (this is because we have population limit making our main ga saturated elsewise)
+    async function mutators(lnsSetArr, getTopNfn, maxRep = 3) {
+      let totalOrignalPopulation = lnsSetArr.length;
+      let possibleLines = [[], []]; // a subGA will be runned to combine ln1,ln2 for best result, however yes these are correct in corresspondence
+      // the generation of possibleLines
       for (let i = 0; i < lnsSetArr.length; i++) {
         let tokenized = [
           defaultTokenizer(lnsSetArr[i].ln1),
@@ -128,7 +155,7 @@ ${lnsSet.ln2}`
           (((proberbilityMutate[0] + proberbilityMutate[1]) / 2 + 1) *
             (newTokenized[0].length + newTokenized[1].length)) /
           2;
-        // globRes * a + len * b                more the a-b    less will be diverse generations but more it will be rhymed
+        // globRes * a + len * b                more the a-b    less will be diverse generations but more it will be rhymed (convergence)
         const linesResolution = [
           GlobalResolution * 0.852 + newTokenized[0].length * 0.13,
           GlobalResolution * 0.852 + newTokenized[1].length * 0.13,
@@ -142,62 +169,129 @@ ${lnsSet.ln2}`
         let totalStepsDone = 0;
         let actualResolutionS = 0;
 
-        let theoradicalSubstitutedStack = []; // since our resoution can be less so an item is re-substitued twice  we just use the better one from those choices
-        for (let j = 0; j < newTokenized[0].length; j += 0) {
-          totalStepsDone++;
-          if (totalStepsDone >= maxSteps[0]) break;
-          let actualResolution =
-            linesResolution[0] /
-            updateEffectivenessGredient[0][
-              getDescriteIndexd(j, newTokenized[0].length, prevActualResolution)
-            ];
-          actualResolutionS += actualResolution;
-          const actualResolutionAVG = actualResolutionS / totalStepsDone;
-          let remaining =
-            (remainingS / totalStepsDone +
-              actualResolutionAVG * newTokenized[0]) /
-            2;
+        let allEffectiveNessGredients = [
+          ...new Set([
+            ...updateEffectivenessGredient[0],
+            ...updateEffectivenessGredient[1],
+          ]),
+        ];
 
-          remainingS += remaining;
+        let allTokness = [...new Set([...newTokenized[1], ...newTokenized[0]])];
 
-          // adjustment so it caps at a limit of steps to apply
-          // its just a linear history interpolation averaged to actuall non linear result every itteration
-          let requiredStepsPrediction = actualResolutionAVG * remaining;
-          if (requiredStepsPrediction > maxSteps[0]) {
-            // we just cap it to maximum we can get  minus the errorRate of our prediction on average
-            actualResolutionAVG =
-              (maxSteps[0] - requiredStepsPrediction) / remaining;
-          }
-          j += actualResolution;
-          prevActualResolution = actualResolution;
-          if (
-            Math.random() *
-              (1 +
-                updateEffectivenessGredient[0][
+        for (let lineIndex = 0; lineIndex <= 1; lineIndex++) {
+          for (let j = 0; j < newTokenized[lineIndex].length; j += 0) {
+            totalStepsDone++;
+            if (totalStepsDone >= maxSteps[lineIndex]) break;
+            let actualResolution =
+              linesResolution[lineIndex] /
+              updateEffectivenessGredient[lineIndex][
+                getDescriteIndexd(
+                  j,
+                  newTokenized[lineIndex].length,
+                  prevActualResolution
+                )
+              ];
+            actualResolutionS += actualResolution;
+            const actualResolutionAVG = actualResolutionS / totalStepsDone;
+            let remaining =
+              (remainingS / totalStepsDone +
+                actualResolutionAVG * newTokenized[lineIndex]) /
+              2;
+
+            remainingS += remaining;
+
+            // adjustment so it caps at a limit of steps to apply
+            // its just a linear history interpolation averaged to actuall non linear result every itteration
+            let requiredStepsPrediction = actualResolutionAVG * remaining;
+            if (requiredStepsPrediction > maxSteps[0]) {
+              // we just cap it to maximum we can get  minus the errorRate of our prediction on average  (error rate is a //TODO )
+              actualResolutionAVG =
+                (maxSteps[lineIndex] - requiredStepsPrediction) / remaining;
+            }
+            j += actualResolution;
+            prevActualResolution = actualResolution;
+            if (
+              Math.random() *
+                (1 +
+                  updateEffectivenessGredient[lineIndex][
+                    getDescriteIndexd(
+                      j,
+                      updateEffectivenessGredient[lineIndex],
+                      actualResolution
+                    )
+                  ]) >
+              proberbilityMutate
+            ) {
+              newTokenized[lineIndex].push(
+                applyRandIndexControledSubstitution(
+                  newTokenized[lineIndex],
+                  allTokness,
+
+                  allEffectiveNessGredients,
+
                   getDescriteIndexd(
                     j,
-                    updateEffectivenessGredient[0],
+                    newTokenized[lineIndex],
                     actualResolution
                   )
-                ]) >
-            proberbilityMutate
-          ) {
-            // TODO  we will store these results as theoradical substitutions
-            // and then use fittness aproximation / sub_GA for finding best substitution to apply
-            newTokenized[0] = applyRandIndexControledSubstitution(
-              newTokenized[0],
-              [...new Set([...newTokenized[1], ...newTokenized[0]])],
-              [
-                ...new Set([
-                  ...updateEffectivenessGredient[0],
-                  ...updateEffectivenessGredient[1],
-                ]),
-              ],
-              getDescriteIndexd(j, newTokenized[0], actualResolution)
-            );
+                )
+              );
+            }
+
+            possibleLines[lineIndex].push(...newTokenized);
           }
         }
       }
+      // formation of possible coherent groups (canidates)
+      let PossibleCoherentGroup = [];
+      // conventional relative indexes
+      for (let i = 0; i < possibleLines[0].length; i++) {
+        PossibleCoherentGroup[i] = {
+          ln1: possibleLines[0][i],
+          ln2: possibleLines[1][i],
+        };
+      }
+      // exploration of random other coherent groups (subGA)
+      let r = await evolveGA({
+        specs: {
+          generations: 55,
+          populations: 25,
+          objectives: 4,
+          islands: 1,
+        },
+        fittness: fittnessAproximationLive,
+        spawners: function () {
+          return PossibleCoherentGroup;
+        },
+        mutators: function (groupsArr) {
+          let r = [];
+          for (let i = 0; i < groupsArr.length; i++) {
+            r.push({
+              ln1: groupsArr[i][0],
+              ln2: groupsArr[i][1],
+            });
+            r.push({
+              ln1: groupsArr[i][1],
+              ln2: groupsArr[i][0],
+            });
+          }
+          return r;
+        },
+      });
+      PossibleCoherentGroup.push(r.finalPopulation);
+
+      // eliminating rest of the PossibleCoherentGroup to get as many population as in orignal
+      // TODO we can use another smaller GA this time muattor just returns the nearest worded other group instead of brute force
+      // Pareto Dominace stuff
+      let bestFittnesses = [];
+      for (let i = 0; i < PossibleCoherentGroup.length; i++) {
+        bestFittnesses[i] = fittnessAproximationLive(PossibleCoherentGroup[i]);
+      }
+      return getTopNfn(
+        bestFittnesses,
+        PossibleCoherentGroup,
+        totalOrignalPopulation
+      );
     }
     return {
       fittness: fittness,
@@ -258,6 +352,7 @@ function generatePoem(poemLns, opts, lastInstanceHLI) {
     newPoemLns[i] = [...poemLns[i]];
   }
   if (storg.holdedLines.length > 0) {
+    // TODO handel times when we have bi or N stabilities instea of uni stability of mistakes
     if (storg.holdedLines == lastInstanceHLI) {
       console.warn(
         "Poem unable to be generated without mistakes, unable to remove same mistakes",
