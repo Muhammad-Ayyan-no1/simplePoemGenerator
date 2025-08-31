@@ -2,7 +2,7 @@ const { RiTa } = require("rita");
 
 RiTa.SILENT = true;
 
-const allowedRange = [0, Infinity];
+const allowedRange = [0, 25];
 const logMaxFrequency = 5000; // ms
 let logStack = [];
 let maxLogStack = 5;
@@ -46,7 +46,7 @@ class GA {
     this.seed = Math.random();
     this.population = [];
     this.fittness = [];
-    this.avgFittness = [];
+    this.avgFittness = [0, 0, 0];
     this.specs = {};
     this.states = { generation: 0 };
     this.fns = {
@@ -62,12 +62,12 @@ class GA {
   }
   async step() {
     this.states.generation++;
-    if (this.states.generation % 100 == 0)
+    if (this.states.generation % 2 == 0)
       log(
         "ga info",
         2,
         `Generation: ${this.states.generation} avg fittness ${
-          this.avgFittness[2] || "N/A"
+          this.avgFittness[0] / this.avgFittness[1] || "N/A"
         }`
       );
     log("ga info", -1, "GA step started");
@@ -76,6 +76,7 @@ class GA {
     await this.applyCrossOver();
     this.updateSpecs();
     log("ga info", -2, "GA step stopped");
+    // console.log(this.population[0]);
   }
 
   evaluateFittness() {
@@ -93,6 +94,7 @@ class GA {
   filterBadPopulation(fittness = this.fittness, population = this.population) {
     let points = [];
     for (let i = 0; i < fittness.length; i++) {
+      // console.log(this.population[i]);
       let point = 0;
       for (let k = 0; k < fittness[i].length; k++) {
         for (let j = 0; j < fittness.length; j++) {
@@ -101,8 +103,11 @@ class GA {
           }
         }
       }
+      let score = -Math.log(Math.max(point, 1e-10));
+      this.avgFittness[0] += score;
+      this.avgFittness[1]++;
       points[i] = {
-        score: -Math.log(Math.max(point, 1e-10)),
+        score: score,
         ...population[i],
       }; // Avoid log(0)
     }
@@ -113,7 +118,8 @@ class GA {
 
   shallowInverseGussionCurve(a) {
     let r = a - 0.5;
-    return -4 * r * r + 1;
+    r = -4 * r * r + 1;
+    return r;
   }
 
   async applyCrossOver() {
@@ -602,6 +608,7 @@ async function generatePoem(
   };
   let schematicOfRhyme = [1, 1];
   let rPoemLns = poemLns.map((line) => RiTa.tokenize(line.join(" ")));
+  // console.log(rPoemLns);
   let newPoemLns = [];
   for (let i = 0; i < poemLns.length; i++) {
     if (i + schematicOfRhyme[i] >= poemLns.length) continue;
@@ -613,7 +620,17 @@ async function generatePoem(
         poemLns[i + schematicOfRhyme[i]],
         opts
       );
+      // console.log(rhymedLns);
+      if (Math.random() > 0.75)
+        rhymedLns.success =
+          rhymedLns.success &&
+          RiTa.isRhyme(
+            rhymedLns.newLns[0][rhymedLns.newLns[0].length - 1],
+            rhymedLns.newLns[1][rhymedLns.newLns[1].length - 1]
+          );
       if (!rhymedLns.success) {
+        // console.log(rhymedLns);
+        // console.log(storg.holdedLines);
         storg.holdedLines.push({
           ln: poemLns[i],
           matched: poemLns[i + schematicOfRhyme[i]],
@@ -622,7 +639,9 @@ async function generatePoem(
           rln: rPoemLns[i],
           rmatched: rPoemLns[i + schematicOfRhyme[i]],
         });
-        continue;
+
+        // console.log(storg.holdedLines);
+        // continue;
       }
       poemLns[i] = rhymedLns.newLns[0];
       poemLns[i + schematicOfRhyme[i]] = rhymedLns.newLns[1];
@@ -669,6 +688,7 @@ async function main() {
     }
   );
   console.log("Generated Poem:");
+  // console.log(poem);
   console.log(poem.map((line) => line.join(" ")).join("\n"));
 }
 
