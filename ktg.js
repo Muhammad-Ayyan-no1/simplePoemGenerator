@@ -2,7 +2,7 @@ const { RiTa } = require("rita");
 
 RiTa.SILENT = true;
 
-const allowedRange = [-2, Infinity];
+const allowedRange = [0, Infinity];
 const logMaxFrequency = 5000; // ms
 let logStack = [];
 let maxLogStack = 5;
@@ -56,6 +56,7 @@ class GA {
           19,
           "Fittness fn not defined of ga, this is the heart of ga at least define this fn"
         );
+        return [];
       },
     };
   }
@@ -65,48 +66,52 @@ class GA {
       log(
         "ga info",
         2,
-        `Generation : ${this.states.generation} avg fittness ${this.avgFittness[2]}`
+        `Generation: ${this.states.generation} avg fittness ${
+          this.avgFittness[2] || "N/A"
+        }`
       );
-    log("ga info", 0, "GA step started");
+    log("ga info", -1, "GA step started");
     this.evaluateFittness();
     this.orignalPopulation = this.population.length;
     await this.applyCrossOver();
     this.updateSpecs();
-    log("ga info", -1, "GA step stopped");
+    log("ga info", -2, "GA step stopped");
   }
 
   evaluateFittness() {
     let r = this.fns.fittness(this.population);
     for (let i = 0; i < r.length; i++) {
       for (let j = 0; j < r[i].length; j++) {
-        r[i][j] = -Math.log(r[i][j]);
+        r[i][j] = -Math.log(Math.max(r[i][j], 1e-10)); // Avoid log(0)
         r[i][j] = this.shallowInverseGussionCurve(r[i][j]) * 25 + r[i][j] * 75;
       }
     }
     this.fittness = r;
-    this.filterBadPopulation();
+    this.population = this.filterBadPopulation();
   }
-  // idk proper NASC II
+
   filterBadPopulation(fittness = this.fittness, population = this.population) {
     let points = [];
     for (let i = 0; i < fittness.length; i++) {
       let point = 0;
-      for (let j = 0; j < fittness.length; j++) {
-        for (let k = 0; k < fittness[i].length; k++) {
-          point += fittness[i][k] - fittness[j][k]; // more it outcompetes other better it is
+      for (let k = 0; k < fittness[i].length; k++) {
+        for (let j = 0; j < fittness.length; j++) {
+          if (i !== j) {
+            point += fittness[i][k] - fittness[j][k]; // Compare against others
+          }
         }
       }
-      points[i] = { score: -Math.log(point), ...population[i] };
+      points[i] = {
+        score: -Math.log(Math.max(point, 1e-10)),
+        ...population[i],
+      }; // Avoid log(0)
     }
-    population = points
+    return points
       .sort((a, b) => b.score - a.score)
-      .splice(0, this.orignalPopulation);
-    return population;
+      .slice(0, this.orignalPopulation); // Use slice to keep top N
   }
 
   shallowInverseGussionCurve(a) {
-    // we dont need precise results  just a similar curve
-    // we use this because theres more chance worse best perform good in future than mid ones
     let r = a - 0.5;
     return -4 * r * r + 1;
   }
@@ -121,7 +126,13 @@ class GA {
   }
 
   updateSpecs() {
-    log("ga err", 19, "hyper prams are todo"); // TODO
+    this.specs.mutationRate = this.specs.mutationRate || 0.2;
+    this.specs.crossoverRate = this.specs.crossoverRate || 0.8;
+    log(
+      "ga info",
+      0,
+      `Updated specs: mutationRate=${this.specs.mutationRate}, crossoverRate=${this.specs.crossoverRate}`
+    );
   }
 
   init() {
@@ -133,7 +144,7 @@ class GA {
     for (let i = 0; i < gens; i++) {
       await this.step();
       log("ga info", -2, "awaiting frame in ga");
-      if (i % 25) {
+      if (i % 25 === 0) {
         await new Promise((res) => {
           if (typeof requestAnimationFrame !== "undefined") {
             requestAnimationFrame(res);
@@ -174,7 +185,11 @@ async function addPoeticLines(addLns, poemLns) {
   function semanticSimilarity(a, b) {
     if (Array.isArray(a)) a = a.join(" ");
     if (Array.isArray(b)) b = b.join(" ");
-    return Math.random(); // stub for semantic similarity
+    // Simple heuristic: count common words
+    const wordsA = new Set(a.toLowerCase().split(" "));
+    const wordsB = new Set(b.toLowerCase().split(" "));
+    const common = [...wordsA].filter((word) => wordsB.has(word)).length;
+    return common / Math.max(wordsA.size, wordsB.size, 1);
   }
 
   function buildPoem(poemLns, addLns, positions) {
@@ -237,7 +252,7 @@ async function addPoeticLines(addLns, poemLns) {
 
   let r = await evolveGA({
     specs: {
-      populations: 250,
+      populations: 5,
       generations: 55,
       objectives: 4,
       islands: 1,
@@ -249,12 +264,17 @@ async function addPoeticLines(addLns, poemLns) {
   return buildPoem(poemLns, addLns, r[0].positions);
 }
 
-async function atamptRhymeLine(ln1, ln2, opts) {
+async function atamptRhymeLine(ln1, ln2, opts, recursionDepth = 0) {
+  if (recursionDepth > 5) {
+    log("ga err", 10, "Max recursion depth reached in atamptRhymeLine");
+    return { success: false, newLns: [ln1, ln2] };
+  }
+
   ln1 = ln1.join(" ");
   ln2 = ln2.join(" ");
   let substitutions = opts.substitutions || {};
   let getSemanticSimilarity =
-    opts.semanticSimilarity || ((a, b) => Math.random());
+    opts.semanticSimilarity || ((a, b) => semanticSimilarity(a, b));
   let substitutionGA = (function () {
     function applyAtRandSubstitutionLn(ln, pattern, replacement, reps) {
       let sI = 0;
@@ -301,9 +321,7 @@ async function atamptRhymeLine(ln1, ln2, opts) {
       }
       return [newLn1, newLn2];
     }
-    // how well two lns rythm + rhyme and soo on
     function measurePoetism(ln1, ln2) {
-      // we are dependent ofn RiTa for this fn
       if (Array.isArray(ln1)) ln1 = ln1.join(" ");
       if (Array.isArray(ln2)) ln2 = ln2.join(" ");
       let score = 0;
@@ -317,24 +335,20 @@ async function atamptRhymeLine(ln1, ln2, opts) {
     function semanticSimilarity(a, b) {
       if (Array.isArray(a)) a = a.join(" ");
       if (Array.isArray(b)) b = b.join(" ");
-      let s = getSemanticSimilarity(a, b);
-      return s;
+      const wordsA = new Set(a.toLowerCase().split(" "));
+      const wordsB = new Set(b.toLowerCase().split(" "));
+      const common = [...wordsA].filter((word) => wordsB.has(word)).length;
+      return common / Math.max(wordsA.size, wordsB.size, 1);
     }
     function fittness(lnsSetARR) {
       let r = [];
       for (let i = 0; i < lnsSetARR.length; i++) {
         let lnsSet = lnsSetARR[i];
-        // ga is multi objective, dynamic fittness confidence / weight based    (its a self implemented for this project idk a technical name)
         r[i] = [
           measurePoetism(lnsSet.ln1, lnsSet.ln2),
           semanticSimilarity(ln1, lnsSet.ln1),
           semanticSimilarity(ln2, lnsSet.ln2),
-          semanticSimilarity(
-            `${ln1}
-${ln2}`,
-            `${lnsSet.ln1}
-${lnsSet.ln2}`
-          ),
+          semanticSimilarity(`${ln1}\n${ln2}`, `${lnsSet.ln1}\n${lnsSet.ln2}`),
         ];
       }
       return r;
@@ -376,13 +390,9 @@ ${lnsSet.ln2}`
       return vocabulary[randIdx];
     }
 
-    // for N population it also grows it to 4*NM (M = avg line length)  and keeps only N   by shallow inverse guassion curve on fittness aproximation (subGA)
-    // this is a beast of a mutator   has 2 subGAs  to make the best mutations
-    // yes i should just inject to main ga  but this way on average our result is better (this is because we have population limit making our main ga saturated elsewise)
     async function mutators(lnsSetArr, getTopNfn, maxRep = 3) {
       let totalOrignalPopulation = lnsSetArr.length;
-      let possibleLines = [[], []]; // a subGA will be runned to combine ln1,ln2 for best result, however yes these are correct in corresspondence
-      // the generation of possibleLines
+      let possibleLines = [[], []];
       for (let i = 0; i < lnsSetArr.length; i++) {
         let tokenized = [
           RiTa.tokenize(
@@ -403,17 +413,15 @@ ${lnsSet.ln2}`
         let newTokenized = [
           structuredClone(tokenized[0]),
           structuredClone(tokenized[1]),
-        ]; // ln1,ln2
+        ];
         let proberbilityMutate = [
           maxRep / newTokenized[0].length,
           maxRep / newTokenized[1].length,
         ];
-        //  average of mutation proberbilities weighted as increase (+1) to the average of the length of arrays is our resolution
         const GlobalResolution =
           (((proberbilityMutate[0] + proberbilityMutate[1]) / 2 + 1) *
             (newTokenized[0].length + newTokenized[1].length)) /
           2;
-        // globRes * a + len * b                more the a-b    less will be diverse generations but more it will be rhymed (convergence)
         const linesResolution = [
           GlobalResolution * 0.852 + newTokenized[0].length * 0.13,
           GlobalResolution * 0.852 + newTokenized[1].length * 0.13,
@@ -458,11 +466,8 @@ ${lnsSet.ln2}`
 
             remainingS += remaining;
 
-            // adjustment so it caps at a limit of steps to apply
-            // its just a linear history interpolation averaged to actuall non linear result every itteration
             let requiredStepsPrediction = actualResolutionAVG * remaining;
             if (requiredStepsPrediction > maxSteps[0]) {
-              // we just cap it to maximum we can get  minus the errorRate of our prediction on average  (error rate is a //TODO )
               actualResolutionAVG =
                 (maxSteps[lineIndex] - requiredStepsPrediction) / remaining;
             }
@@ -496,53 +501,55 @@ ${lnsSet.ln2}`
           }
         }
       }
-      // formation of possible coherent groups (canidates)
       let PossibleCoherentGroup = [];
-      //  relative corressponding indexes
-      for (let i = 0; i < possibleLines[0].length; i++) {
+      for (
+        let i = 0;
+        i < Math.min(possibleLines[0].length, possibleLines[1].length);
+        i++
+      ) {
         PossibleCoherentGroup[i] = {
           ln1: possibleLines[0][i],
           ln2: possibleLines[1][i],
         };
       }
-      // exploration of random other coherent groups (subGA)
-      let fittnessAproximationLive = fittness;
+      // Run a lightweight sub-GA
       let subr = await evolveGA({
         specs: {
-          generations: 200,
-          populations: 150,
+          generations: 5,
+          populations: 50,
           objectives: 4,
           islands: 1,
         },
-        fittness: fittnessAproximationLive,
+        fittness: fittness,
         spawners: function () {
           return structuredClone(PossibleCoherentGroup);
         },
         mutators: function (groupsArr) {
           let r = [];
           for (let i = 0; i < groupsArr.length; i++) {
+            let newLn1 = structuredClone(groupsArr[i].ln1);
+            let newLn2 = structuredClone(groupsArr[i].ln2);
+            if (Math.random() < 0.2) {
+              let idx1 = Math.floor(Math.random() * newLn1.length);
+              let idx2 = Math.floor(Math.random() * newLn2.length);
+              let vocab = [...new Set([...newLn1, ...newLn2])];
+              if (vocab.length > 0) {
+                newLn1[idx1] = vocab[Math.floor(Math.random() * vocab.length)];
+                newLn2[idx2] = vocab[Math.floor(Math.random() * vocab.length)];
+              }
+            }
             r.push({
-              ln1: groupsArr[i].ln1,
-              ln2: groupsArr[i].ln2,
-            });
-            r.push({
-              ln1: groupsArr[i].ln2,
-              ln2: groupsArr[i].ln1,
+              ln1: newLn1,
+              ln2: newLn2,
             });
           }
           return r;
         },
       });
       PossibleCoherentGroup.push(...subr);
-
-      // eliminating rest of the PossibleCoherentGroup to get as many population as in orignal
-      // TODO we can use another smaller GA this time muattor just returns the nearest worded other group instead of brute force
-      // Pareto Dominace stuff
       let bestFittnesses = [];
       for (let i = 0; i < PossibleCoherentGroup.length; i++) {
-        bestFittnesses[i] = fittnessAproximationLive([
-          PossibleCoherentGroup[i],
-        ])[0];
+        bestFittnesses[i] = fittness([PossibleCoherentGroup[i]])[0];
       }
       return getTopNfn(
         bestFittnesses,
@@ -558,10 +565,10 @@ ${lnsSet.ln2}`
   })();
   let result = await evolveGA({
     specs: {
-      generations: 150,
-      populations: 500,
+      generations: 5,
+      populations: 100,
       objectives: 4,
-      islands: 1, // this feature is todo currently btw  (multi threading)
+      islands: 1,
       ...opts.substitutionsGAspecs,
     },
     fittness: substitutionGA.fittness,
@@ -570,11 +577,26 @@ ${lnsSet.ln2}`
   });
   let best = result[0];
   let newLns = [best.ln1, best.ln2];
-  let success = true; // assume success after GA
+  let success = RiTa.isRhyme(
+    newLns[0].join(" ").split(" ").pop(),
+    newLns[1].join(" ").split(" ").pop()
+  );
+  if (!success) {
+    return atamptRhymeLine(newLns[0], newLns[1], opts, recursionDepth + 1);
+  }
   return { success, newLns };
 }
 
-async function generatePoem(poemLns, opts = {}, lastInstanceHLI = null) {
+async function generatePoem(
+  poemLns,
+  opts = {},
+  lastInstanceHLI = null,
+  depth = 0
+) {
+  if (depth > 10) {
+    console.warn("Maximum recursion depth reached in generatePoem");
+    return poemLns;
+  }
   let storg = {
     holdedLines: [],
   };
@@ -612,13 +634,13 @@ async function generatePoem(poemLns, opts = {}, lastInstanceHLI = null) {
     newPoemLns[i] = [...poemLns[i]];
   }
   if (storg.holdedLines.length > 0) {
-    // TODO handel times when we have bi or N stabilities instea of uni stability of mistakes
-    if (storg.holdedLines == lastInstanceHLI) {
+    if (JSON.stringify(storg.holdedLines) === JSON.stringify(lastInstanceHLI)) {
       console.warn(
         "Poem unable to be generated without mistakes, unable to remove same mistakes",
         storg.holdedLines,
         lastInstanceHLI
       );
+      return newPoemLns;
     } else {
       log(
         "poem generation info",
@@ -626,18 +648,28 @@ async function generatePoem(poemLns, opts = {}, lastInstanceHLI = null) {
         "Refining mistake from previous atampts of poem generation"
       );
       newPoemLns = await addPoeticLines(storg.holdedLines, newPoemLns);
-      return generatePoem(newPoemLns, opts, storg.holdedLines); // we recursively improve poem   however we keep track that we dont get same mistakes over and over again
+      return generatePoem(newPoemLns, opts, storg.holdedLines, depth + 1);
     }
   }
   return newPoemLns;
 }
 
 async function main() {
-  const poem = await generatePoem([
-    ["He", "gave", "us", "independence"],
-    ["Who", "made", "us", "servents", "of", "goverment"],
-  ]);
-  console.log(poem);
+  const poem = await generatePoem(
+    [
+      ["He", "gave", "us", "independence"],
+      ["Who", "made", "us", "servents", "of", "goverment"],
+    ],
+    {
+      substitutions: {
+        independence: "freedom",
+        goverment: "nation",
+        servents: "servants",
+      },
+    }
+  );
+  console.log("Generated Poem:");
+  console.log(poem.map((line) => line.join(" ")).join("\n"));
 }
 
 main();
