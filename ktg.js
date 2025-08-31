@@ -1,4 +1,5 @@
-const { act } = require("react");
+const { RiTa } = require("rita");
+const { genetic } = require("genetic");
 
 async function evolveGA(opts) {}
 

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "genetic": "^0.3.1",
+    "rita": "^3.1.3"
+  }
+}
