@@ -1,7 +1,133 @@
 const { RiTa } = require("rita");
-const { genetic } = require("genetic");
 
-async function evolveGA(opts) {}
+const allowedRange = [0, Infinity];
+const logMaxFrequency = 5000; // ms
+let logStack = [];
+let maxLogStack = 5;
+let lastLogCall = 0;
+function log(type, priority, data, igFreq = true) {
+  if (!igFreq) {
+    let currentCall = performance.now();
+    if (currentCall - lastLogCall < logMaxFrequency) {
+      logStack.push(log(type, priority, data, false));
+      while (logStack.length > maxLogStack) logStack.shift();
+    } else {
+      for (let i = 0; i < logStack.length; i++) {
+        console.log(logStack[i]);
+      }
+      logStack = [];
+    }
+  }
+
+  if (priority < allowedRange[0] || priority > allowedRange[1]) false;
+  if (typeof data != "string") data = JSON.stringify(data, null, 2);
+  if (data.contains("\n"))
+    console.log(`[${type}] :: \n ${data}  --- :: ${type} :: ---`);
+  else console.log(`[${type}] || ${data}`);
+  return true;
+}
+
+class GA {
+  constructor() {
+    this.seed = Math.random();
+    this.population = [];
+    this.fittness = [];
+    this.avgFittness = [];
+    this.specs = {};
+    this.states = { generation: 0 };
+    this.fns = {
+      fittness: function () {
+        log(
+          "ga err",
+          Infinity,
+          "Fittness fn not defined of ga, this is the heart of ga at least define this fn"
+        );
+      },
+    };
+  }
+  step() {
+    this.states.generation++;
+    if (this.states.generation % 100 == 0)
+      log(
+        "ga info",
+        2,
+        `Generation : ${this.states.generation} avg fittness ${this.avgFittness[2]}`
+      );
+    log("ga info", 0, "GA step started");
+    this.evaluateFittness();
+    this.orignalPopulation = this.population.length;
+    this.applyCrossOver();
+    this.updateSpecs();
+    log("ga info", -1, "GA step stopped");
+  }
+
+  evaluateFittness() {
+    for (let i = 0; i < this.population.length; i++) {
+      let r = this.fns.fittness(this.population);
+      for (let j = 0; j < r.length; j++) {
+        r[j] = -Math.log(r[j]);
+        r[j] = this.shallowInverseGussionCurve(r[j]) * 25 + r[j] * 75;
+      }
+      this.fittness[i] = r;
+    }
+    this.filterBadPopulation();
+  }
+  // idk proper NASC II
+  filterBadPopulation(fittness = this.fittness, population = this.population) {
+    let points = [];
+    for (let i = 0; i < fittness.length; i++) {
+      let point = 0;
+      for (let j = 0; j < fittness.length; j++) {
+        for (let k = 0; k < fittness[i].length; k++) {
+          point += fittness[i][k] - fittness[j][k]; // more it outcompetes other better it is
+        }
+      }
+      points[i] = { score: -Math.log(point), ...population[i] };
+    }
+    population[i] = points
+      .sort((a, b) => b.score - a.score)
+      .splice(0, this.orignalPopulation);
+  }
+
+  shallowInverseGussionCurve(a) {
+    // we dont need precise results  just a similar curve
+    // we use this because theres more chance worse best perform good in future than mid ones
+    let r = a - 0.5;
+    return -4 * a * a + 1;
+  }
+
+  applyCrossOver() {
+    this.population.push(
+      this.fns.mutators(this.population, this.filterBadPopulation)
+    );
+  }
+
+  updateSpecs() {
+    log("ga err", Infinity, "hyper prams are todo"); // TODO
+  }
+
+  init() {
+    this.population.push(this.fns.spawners(this.Seed));
+  }
+
+  async runGA(gens) {
+    this.init();
+    for (let i = 0; i < gens; i++) {
+      this.step();
+      log("ga info", -2, "awaiting frame in ga");
+      if (i % 25) {
+        await new Promise((res) => {
+          requestAnimationFrame(res);
+        });
+      }
+    }
+    return this.population;
+  }
+}
+
+async function evolveGA(opts) {
+  // TODO
+}
 
 async function addPoeticLines(addLns, poemLns) {
   function fittness() {}
@@ -117,8 +243,7 @@ ${lnsSet.ln2}`
       return continuesIndex * (arr.length - 1) * resolution;
     }
 
-    //KNN type system to just predict the slope of fittness on each word  contains same complex math like mutators
-    function formUpdateEffectivenessGredientMapMutator() {}
+    let formUpdateEffectivenessGredientMapMutator = opts.effectiveMapOfLines;
 
     function applyRandIndexControledSubstitution(
       tokens,
